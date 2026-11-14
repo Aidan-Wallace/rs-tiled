@@ -553,6 +553,14 @@ impl Tileset {
             },
         });
 
+        // Legacy files omit the image size; read it from the PNG header when we can.
+        if let Some(img) = image.as_mut().filter(|i| i.width == 0 || i.height == 0) {
+            if let Some((w, h)) = probe_png_size(reader, &img.source) {
+                img.width = w;
+                img.height = h;
+            }
+        }
+
         // A tileset is considered an image collection tileset if there is no image attribute (because its tiles do).
         let is_image_collection_tileset = image.is_none();
 
@@ -665,4 +673,16 @@ fn parse_tileoffset<R: std::io::BufRead>(
     );
     parse_tag!(elem, {});
     Ok(offset)
+}
+
+/// Width and height from a PNG's IHDR chunk, if the resource is a readable PNG.
+fn probe_png_size(reader: &mut impl ResourceReader, path: &Path) -> Option<(i32, i32)> {
+    use std::io::Read;
+    let mut head = [0u8; 24];
+    reader.read_from(path).ok()?.read_exact(&mut head).ok()?;
+    if &head[..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    let be = |b: &[u8]| i32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+    Some((be(&head[16..20]), be(&head[20..24])))
 }

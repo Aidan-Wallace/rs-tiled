@@ -57,7 +57,7 @@ pub struct Image {
     /// file this example is referring to.
     // TODO: Embedded images
     pub source: PathBuf,
-    /// The width in pixels of the image.
+    /// The width in pixels of the image. 0 when the file doesn't say and it could not be probed.
     pub width: i32,
     /// The height in pixels of the image.
     pub height: i32,
@@ -70,21 +70,21 @@ impl Image {
         elem: XmlElement<'_, R>,
         path_relative_to: impl AsRef<Path>,
     ) -> Result<Image> {
-        let (c, (s, w, h)) = get_attrs!(
+        let (c, w, h, (s,)) = get_attrs!(
             for v in (elem.attrs) {
                 Some("trans") => trans ?= v.parse(),
                 "source" => source = v.to_string(),
-                "width" => width ?= v.parse::<i32>(),
-                "height" => height ?= v.parse::<i32>(),
+                Some("width") => width ?= v.parse::<i32>(),
+                Some("height") => height ?= v.parse::<i32>(),
             }
-            (trans, (source, width, height))
+            (trans, width, height, (source,))
         );
 
         parse_tag!(elem, {});
         Ok(Image {
             source: path_relative_to.as_ref().join(s),
-            width: w,
-            height: h,
+            width: w.unwrap_or(0),
+            height: h.unwrap_or(0),
             transparent_colour: c,
         })
     }
