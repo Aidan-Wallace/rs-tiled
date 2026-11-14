@@ -210,6 +210,9 @@ pub struct ObjectData {
     pub shape: ObjectShape,
     /// The object's custom properties as set by the user.
     pub properties: Properties,
+    /// The template file this object was instantiated from (as first used in a
+    /// [`ResourceReader`]), if any. Its values are already merged into this object.
+    pub template: Option<std::path::PathBuf>,
 }
 
 impl ObjectData {
@@ -264,9 +267,11 @@ impl ObjectData {
             ObjectTileData::from_bits(bits, tilesets?, for_tileset.as_ref().cloned())
         });
         // If the template attribute is there, we need to go fetch the template file
+        let mut template_source = None;
         let template = template
             .map(|template_path: String| {
                 let template_path = base_path.join(Path::new(&template_path));
+                template_source = Some(template_path.clone());
 
                 // Check the cache to see if this template exists
                 let template = if let Some(templ) = cache.get_template(&template_path) {
@@ -424,6 +429,7 @@ impl ObjectData {
             visible,
             shape,
             properties,
+            template: template_source,
         })
     }
 }

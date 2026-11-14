@@ -27,7 +27,7 @@ pub struct ImageRect {
 }
 
 /// Raw data belonging to a tile.
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TileData {
     /// The image of the tile. Only set when the tile is part of an "image collection" tileset.
     pub image: Option<Image>,
@@ -44,6 +44,20 @@ pub struct TileData {
     /// The image rect of this tile, which is only used in image collection tilesets and corresponds
     /// to the TMX `x`, `y`, `width` and `height` tile attributes.
     pub image_rect: Option<ImageRect>,
+}
+
+impl Default for TileData {
+    fn default() -> Self {
+        Self {
+            image: None,
+            properties: Properties::new(),
+            collision: None,
+            animation: None,
+            user_type: String::new(),
+            probability: 1.0,
+            image_rect: None,
+        }
+    }
 }
 
 /// Points to a tile belonging to a tileset.

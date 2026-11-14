@@ -73,6 +73,9 @@ pub struct Tileset {
     /// - Source: [`columns` documentation](https://doc.mapeditor.org/en/stable/reference/tmx-map-format/#tileset)
     pub image: Option<Image>,
 
+    /// The `<grid>` element (tile layout used by Tiled for isometric tilesets), if present.
+    pub grid: Option<TilesetGrid>,
+
     /// All the tiles present in this tileset, indexed by their local IDs.
     tiles: HashMap<TileId, TileData>,
 
@@ -84,6 +87,17 @@ pub struct Tileset {
 
     /// The custom tileset type, arbitrarily set by the user.
     pub user_type: String,
+}
+
+/// The `<grid>` element of a tileset.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TilesetGrid {
+    /// `orthogonal` or `isometric`.
+    pub orientation: String,
+    /// Width of a grid cell in pixels.
+    pub width: i32,
+    /// Height of a grid cell in pixels.
+    pub height: i32,
 }
 
 /// The transformations that can be applied to the tiles of a tileset, for example when used by
@@ -293,7 +307,7 @@ pub(crate) struct EmbeddedParseResult {
 struct TilesetProperties {
     spacing: Option<u32>,
     margin: Option<u32>,
-    tilecount: u32,
+    tilecount: Option<u32>,
     columns: Option<u32>,
     name: String,
     user_type: String,
@@ -362,7 +376,7 @@ impl Tileset {
             Some("fillmode") => fill_mode ?= v.parse::<FillMode>(),
             Some("objectalignment") => object_alignment ?= v.parse::<ObjectAlignment>(),
 
-            "tilecount" => tilecount ?= v.parse::<u32>(),
+            Some("tilecount") => tilecount ?= v.parse::<u32>(),
             "firstgid" => first_gid ?= v.parse::<u32>().map(Gid),
             "tilewidth" => tile_width ?= v.parse::<u32>(),
             "tileheight" => tile_height ?= v.parse::<u32>(),
@@ -442,7 +456,7 @@ impl Tileset {
                 Some("fillmode") => fill_mode ?= v.parse::<FillMode>(),
                 Some("objectalignment") => object_alignment ?= v.parse::<ObjectAlignment>(),
 
-                "tilecount" => tilecount ?= v.parse::<u32>(),
+                Some("tilecount") => tilecount ?= v.parse::<u32>(),
                 "tilewidth" => tile_width ?= v.parse::<u32>(),
                 "tileheight" => tile_height ?= v.parse::<u32>(),
             }
@@ -481,7 +495,8 @@ impl Tileset {
         cache: &mut impl ResourceCache,
     ) -> Result<Tileset> {
         let mut image = Option::None;
-        let mut tiles = HashMap::with_capacity(prop.tilecount as usize);
+        let mut tiles = HashMap::with_capacity(prop.tilecount.unwrap_or(0) as usize);
+        let mut grid = None;
         let mut properties = HashMap::new();
         let mut wang_sets = Vec::new();
         let mut offset = (0i32, 0i32);
@@ -490,6 +505,23 @@ impl Tileset {
         parse_tag!(elem, {
             "image" => |elem| {
                 image = Some(Image::new(elem, &prop.root_path)?);
+                Ok(())
+            },
+            "grid" => |elem: crate::util::XmlElement<'_, R>| {
+                let (orientation, width, height) = get_attrs!(
+                    for v in (elem.attrs) {
+                        Some("orientation") => orientation = v.to_string(),
+                        "width" => width ?= v.parse::<i32>(),
+                        "height" => height ?= v.parse::<i32>(),
+                    }
+                    (orientation, width, height)
+                );
+                parse_tag!(elem, {});
+                grid = Some(TilesetGrid {
+                    orientation: orientation.unwrap_or_else(|| "orthogonal".to_string()),
+                    width,
+                    height,
+                });
                 Ok(())
             },
             "tileoffset" => |elem| {
@@ -531,7 +563,7 @@ impl Tileset {
                 ));
             }
 
-            for tile_id in 0..prop.tilecount {
+            for tile_id in 0..prop.tilecount.unwrap_or(0) {
                 tiles.entry(tile_id).or_default();
             }
         }
@@ -542,6 +574,20 @@ impl Tileset {
             .columns
             .map(Ok)
             .unwrap_or_else(|| Self::calculate_columns(&image, prop.tile_width, margin, spacing))?;
+        // Legacy tilesets omit `tilecount`: derive it from the image (or the explicit tiles).
+        let tilecount = match (prop.tilecount, &image) {
+            (Some(n), _) => n,
+            (None, Some(img)) => {
+                let rows = (img.height as u32 - margin + spacing) / (prop.tile_height + spacing);
+                columns * rows
+            }
+            (None, None) => tiles.len() as u32,
+        };
+        if image.is_some() {
+            for tile_id in 0..tilecount {
+                tiles.entry(tile_id).or_default();
+            }
+        }
 
         Ok(Tileset {
             source: container_path,
@@ -558,7 +604,8 @@ impl Tileset {
             fill_mode: prop.fill_mode.unwrap_or_default(),
             object_alignment: prop.object_alignment.unwrap_or_default(),
             transformations,
-            tilecount: prop.tilecount,
+            tilecount,
+            grid,
             image,
             tiles,
             wang_sets,
