@@ -90,6 +90,13 @@ pub enum PropertyValue {
         /// A set of properties.
         properties: Properties,
     },
+    /// A `string` or `int` value that carries a custom enum `propertytype`.
+    EnumValue {
+        /// The enum type name.
+        property_type: String,
+        /// The underlying `StringValue` or `IntValue`.
+        value: Box<PropertyValue>,
+    },
 }
 
 impl PropertyValue {
@@ -216,5 +223,13 @@ fn parse_property_value<R: std::io::BufRead>(
             read_text_or_cdata(elem, |text| Ok(text.to_string()))?
         }
     };
-    PropertyValue::new(t, v)
+    let enum_type = p_t.filter(|p| !p.is_empty() && (t == "string" || t == "int"));
+    let value = PropertyValue::new(t, v)?;
+    Ok(match enum_type {
+        Some(property_type) => PropertyValue::EnumValue {
+            property_type,
+            value: Box::new(value),
+        },
+        None => value,
+    })
 }
